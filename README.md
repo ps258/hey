@@ -63,6 +63,8 @@ Options:
   -disable-redirects    Disable following of HTTP redirects
   -cpus                 Number of used cpu cores.
                         (default for current machine is 8 cores)
+  -cert <cert.pem>      Client certificate to use for mTLS.
+  -key <key.pem>        Client private key to use for mTLS.
 ```
 
 Previously known as [github.com/rakyll/boom](https://github.com/rakyll/boom).
