@@ -1,5 +1,7 @@
 ![hey](http://i.imgur.com/szzD9q0.png)
 
+Added mtls support using code from https://github.com/rakyll/hey/pull/172. Thanks https://github.com/kryzthov-stripe !!
+
 [![Build Status](https://travis-ci.org/rakyll/hey.svg?branch=master)](https://travis-ci.org/rakyll/hey)
 
 hey is a tiny program that sends some load to a web application.
