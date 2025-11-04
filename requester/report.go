@@ -54,11 +54,12 @@ type report struct {
 	done    chan bool
 	total   time.Duration
 
-	errorDist map[string]int
-	lats      []float64
-	sizeTotal int64
-	numRes    int64
-	output    string
+	errorDist      map[string]int
+	statusCodeDist map[int]int
+	lats           []float64
+	sizeTotal      int64
+	numRes         int64
+	output         string
 
 	w io.Writer
 }
@@ -66,18 +67,19 @@ type report struct {
 func newReport(w io.Writer, results chan *result, output string, n int) *report {
 	cap := min(n, maxRes)
 	return &report{
-		output:      output,
-		results:     results,
-		done:        make(chan bool, 1),
-		errorDist:   make(map[string]int),
-		w:           w,
-		connLats:    make([]float64, 0, cap),
-		dnsLats:     make([]float64, 0, cap),
-		reqLats:     make([]float64, 0, cap),
-		resLats:     make([]float64, 0, cap),
-		delayLats:   make([]float64, 0, cap),
-		lats:        make([]float64, 0, cap),
-		statusCodes: make([]int, 0, cap),
+		output:         output,
+		results:        results,
+		done:           make(chan bool, 1),
+		errorDist:      make(map[string]int),
+		statusCodeDist: make(map[int]int),
+		w:              w,
+		connLats:       make([]float64, 0, cap),
+		dnsLats:        make([]float64, 0, cap),
+		reqLats:        make([]float64, 0, cap),
+		resLats:        make([]float64, 0, cap),
+		delayLats:      make([]float64, 0, cap),
+		lats:           make([]float64, 0, cap),
+		statusCodes:    make([]int, 0, cap),
 	}
 }
 
@@ -94,6 +96,8 @@ func runReporter(r *report) {
 			r.avgDNS += res.dnsDuration.Seconds()
 			r.avgReq += res.reqDuration.Seconds()
 			r.avgRes += res.resDuration.Seconds()
+			// Always increment status code count for ALL requests
+			r.statusCodeDist[res.statusCode]++
 			if len(r.resLats) < maxRes {
 				r.lats = append(r.lats, res.duration.Seconds())
 				r.connLats = append(r.connLats, res.connDuration.Seconds())
@@ -205,11 +209,7 @@ func (r *report) snapshot() Report {
 	snapshot.ResMax = r.resLats[0]
 	snapshot.ResMin = r.resLats[len(r.resLats)-1]
 
-	statusCodeDist := make(map[int]int, len(snapshot.StatusCodes))
-	for _, statusCode := range snapshot.StatusCodes {
-		statusCodeDist[statusCode]++
-	}
-	snapshot.StatusCodeDist = statusCodeDist
+	snapshot.StatusCodeDist = r.statusCodeDist
 
 	return snapshot
 }
