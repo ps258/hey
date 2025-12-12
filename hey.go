@@ -16,11 +16,11 @@
 package main
 
 import (
-  "crypto/tls"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
-  "log"
+	"log"
 	"math"
 	"net/http"
 	gourl "net/url"
@@ -53,11 +53,13 @@ var (
 
 	output = flag.String("o", "", "")
 
-	c = flag.Int("c", 50, "")
-	n = flag.Int("n", 200, "")
-	q = flag.Float64("q", 0, "")
-	t = flag.Int("t", 20, "")
-	z = flag.Duration("z", 0, "")
+	c        = flag.Int("c", 50, "")
+	n        = flag.Int("n", 200, "")
+	q        = flag.Float64("q", 0, "")
+	t        = flag.Int("t", 20, "")
+	z        = flag.Duration("z", 0, "")
+	progress = flag.Duration("progress", 0, "")
+	csv      = flag.Bool("csv", false, "")
 
 	h2   = flag.Bool("h2", false, "")
 	cpus = flag.Int("cpus", runtime.GOMAXPROCS(-1), "")
@@ -67,8 +69,8 @@ var (
 	disableRedirects   = flag.Bool("disable-redirects", false, "")
 	proxyAddr          = flag.String("x", "", "")
 
-  cert = flag.String("cert", "", "TLS certificate")
-  key  = flag.String("key", "", "TLS key")
+	cert = flag.String("cert", "", "TLS certificate")
+	key  = flag.String("key", "", "TLS key")
 )
 
 var usage = `Usage: hey [options...] <url>
@@ -108,6 +110,10 @@ Options:
                         (default for current machine is %d cores)
   -cert <cert.pem>      Client certificate to use for mTLS.
   -key <key.pem>        Client private key to use for mTLS.
+
+  -progress  Interval to display progress statistics (average response time,
+      95th percentile, and requests per second). Examples: -progress 1s -progress 5s.
+  -csv  Output progress in CSV format with headers (use with -progress).
 `
 
 func main() {
@@ -228,15 +234,15 @@ func main() {
 
 	req.Header = header
 
-  certs := make([]tls.Certificate, 0)
-  if *cert != "" && *key != "" {
-    tlsCert, err := tls.LoadX509KeyPair(*cert, *key)
-    if err != nil {
-      log.Fatalf("Error loading TLS cert & key: %v", err)
-    }
-    log.Printf("Loaded TLS certificate: %s/%s", *cert, *key)
-    certs = append(certs, tlsCert)
-  }
+	certs := make([]tls.Certificate, 0)
+	if *cert != "" && *key != "" {
+		tlsCert, err := tls.LoadX509KeyPair(*cert, *key)
+		if err != nil {
+			log.Fatalf("Error loading TLS cert & key: %v", err)
+		}
+		log.Printf("Loaded TLS certificate: %s/%s", *cert, *key)
+		certs = append(certs, tlsCert)
+	}
 
 	w := &requester.Work{
 		Request:            req,
@@ -251,7 +257,9 @@ func main() {
 		H2:                 *h2,
 		ProxyAddr:          proxyURL,
 		Output:             *output,
-    Certs:              certs,
+		Certs:              certs,
+		ProgressInterval:   *progress,
+		ProgressCSV:        *csv,
 	}
 	w.Init()
 

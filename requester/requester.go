@@ -18,12 +18,14 @@ package requester
 import (
 	"bytes"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -89,8 +91,15 @@ type Work struct {
 	// Optional.
 	ProxyAddr *url.URL
 
-  // Optional set of client certificates to use for mTLS:
+	// Optional set of client certificates to use for mTLS:
 	Certs []tls.Certificate
+
+	// ProgressInterval is the interval at which to display progress statistics.
+	// If zero, no progress is displayed.
+	ProgressInterval time.Duration
+
+	// ProgressCSV enables CSV format for progress output.
+	ProgressCSV bool
 
 	// Writer is where results will be written. If nil, results are written to stdout.
 	Writer io.Writer
@@ -100,7 +109,13 @@ type Work struct {
 	stopCh   chan struct{}
 	start    time.Duration
 
-	report *report
+	report            *report
+	progressTicker    *time.Ticker
+	progressMu        sync.Mutex
+	progressLats      []float64
+	progressStart     time.Time
+	progressCount     int64
+	progressFirstLine bool
 }
 
 func (b *Work) writer() io.Writer {
@@ -124,6 +139,16 @@ func (b *Work) Run() {
 	b.Init()
 	b.start = now()
 	b.report = newReport(b.writer(), b.results, b.Output, b.N)
+
+	// Initialize progress tracking if enabled
+	if b.ProgressInterval > 0 {
+		b.progressLats = make([]float64, 0, 10000)
+		b.progressStart = time.Now()
+		b.progressTicker = time.NewTicker(b.ProgressInterval)
+		b.progressFirstLine = true
+		go b.runProgressReporter()
+	}
+
 	// Run the reporter first, it polls the result channel until it is closed.
 	go func() {
 		runReporter(b.report)
@@ -140,11 +165,71 @@ func (b *Work) Stop() {
 }
 
 func (b *Work) Finish() {
+	// Stop progress ticker if running
+	if b.progressTicker != nil {
+		b.progressTicker.Stop()
+	}
+
 	close(b.results)
 	total := now() - b.start
 	// Wait until the reporter is done.
 	<-b.report.done
 	b.report.finalize(total)
+}
+
+func (b *Work) runProgressReporter() {
+	// Print CSV header if CSV mode is enabled
+	if b.ProgressCSV && b.progressFirstLine {
+		fmt.Fprintf(b.writer(), "avg_response_time,p95_response_time,requests_per_second\n")
+		b.progressFirstLine = false
+	}
+
+	for range b.progressTicker.C {
+		b.progressMu.Lock()
+
+		if len(b.progressLats) == 0 {
+			b.progressMu.Unlock()
+			continue
+		}
+
+		// Calculate statistics
+		latsCopy := make([]float64, len(b.progressLats))
+		copy(latsCopy, b.progressLats)
+		count := b.progressCount
+		elapsed := time.Since(b.progressStart).Seconds()
+
+		// Reset for next interval
+		b.progressLats = b.progressLats[:0]
+		b.progressCount = 0
+		b.progressStart = time.Now()
+
+		b.progressMu.Unlock()
+
+		// Calculate average
+		var sum float64
+		for _, lat := range latsCopy {
+			sum += lat
+		}
+		avg := sum / float64(len(latsCopy))
+
+		// Calculate 95th percentile
+		sort.Float64s(latsCopy)
+		p95Index := int(float64(len(latsCopy)) * 0.95)
+		if p95Index >= len(latsCopy) {
+			p95Index = len(latsCopy) - 1
+		}
+		p95 := latsCopy[p95Index]
+
+		// Calculate RPS
+		rps := float64(count) / elapsed
+
+		// Print progress
+		if b.ProgressCSV {
+			fmt.Fprintf(b.writer(), "%.4f,%.4f,%.2f\n", avg, p95, rps)
+		} else {
+			fmt.Fprintf(b.writer(), "[Progress] Avg: %.4fs, 95th: %.4fs, RPS: %.2f\n", avg, p95, rps)
+		}
+	}
 }
 
 func (b *Work) makeRequest(c *http.Client) {
@@ -195,7 +280,8 @@ func (b *Work) makeRequest(c *http.Client) {
 	t := now()
 	resDuration = t - resStart
 	finish := t - s
-	b.results <- &result{
+
+	res := &result{
 		offset:        s,
 		statusCode:    code,
 		duration:      finish,
@@ -207,6 +293,16 @@ func (b *Work) makeRequest(c *http.Client) {
 		resDuration:   resDuration,
 		delayDuration: delayDuration,
 	}
+
+	// Track for progress reporting if enabled
+	if b.ProgressInterval > 0 && err == nil {
+		b.progressMu.Lock()
+		b.progressLats = append(b.progressLats, finish.Seconds())
+		b.progressCount++
+		b.progressMu.Unlock()
+	}
+
+	b.results <- res
 }
 
 func (b *Work) runWorker(client *http.Client, n int) {
@@ -242,7 +338,7 @@ func (b *Work) runWorkers() {
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
 			ServerName:         b.Request.Host,
-      Certificates:       b.Certs,
+			Certificates:       b.Certs,
 		},
 		MaxIdleConnsPerHost: min(b.C, maxIdleConn),
 		DisableCompression:  b.DisableCompression,
