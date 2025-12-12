@@ -1,6 +1,8 @@
 ![hey](http://i.imgur.com/szzD9q0.png)
 
-Added mtls support using code from https://github.com/rakyll/hey/pull/172. Thanks https://github.com/kryzthov-stripe !!
+ - Added mtls support using code from https://github.com/rakyll/hey/pull/172. Thanks https://github.com/kryzthov-stripe !
+ - Removed the 1 million request restriction on the 'Status code distribution' only
+
 
 [![Build Status](https://travis-ci.org/rakyll/hey.svg?branch=master)](https://travis-ci.org/rakyll/hey)
 
