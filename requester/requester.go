@@ -180,7 +180,7 @@ func (b *Work) Finish() {
 func (b *Work) runProgressReporter() {
 	// Print CSV header if CSV mode is enabled
 	if b.ProgressCSV && b.progressFirstLine {
-		fmt.Fprintf(b.writer(), "avg_response_time,p95_response_time,requests_per_second\n")
+		fmt.Fprintf(b.writer(), "timestamp,avg_response_time,p95_response_time,requests_per_second\n")
 		b.progressFirstLine = false
 	}
 
@@ -223,11 +223,14 @@ func (b *Work) runProgressReporter() {
 		// Calculate RPS
 		rps := float64(count) / elapsed
 
+		// Get current timestamp in YYYY-MM-DD HH:MM:SS format
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+
 		// Print progress
 		if b.ProgressCSV {
-			fmt.Fprintf(b.writer(), "%.4f,%.4f,%.2f\n", avg, p95, rps)
+			fmt.Fprintf(b.writer(), "%s,%.4f,%.4f,%.2f\n", timestamp, avg, p95, rps)
 		} else {
-			fmt.Fprintf(b.writer(), "[Progress] Avg: %.4fs, 95th: %.4fs, RPS: %.2f\n", avg, p95, rps)
+			fmt.Fprintf(b.writer(), "[%s] [Progress] Avg: %.4fs, 95th: %.4fs, RPS: %.2f\n", timestamp, avg, p95, rps)
 		}
 	}
 }
