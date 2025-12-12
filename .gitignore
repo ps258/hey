@@ -1,3 +1,4 @@
 bin/
 *.xlsx
+*.csv
 test_output.*
