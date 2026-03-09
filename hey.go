@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rakyll/hey/requester"
 )
 
@@ -71,6 +72,8 @@ var (
 
 	cert = flag.String("cert", "", "TLS certificate")
 	key  = flag.String("key", "", "TLS key")
+
+	uniqueURL = flag.Bool("unique-url", false, "")
 )
 
 var usage = `Usage: hey [options...] <url>
@@ -114,6 +117,9 @@ Options:
   -progress  Interval to display progress statistics (average response time,
       95th percentile, and requests per second). Examples: -progress 1s -progress 5s.
   -csv  Output progress in CSV format with headers (use with -progress).
+
+  -unique-url  Generate a unique UUID for each request and append it to the URL path.
+               For example: http://example.com/get becomes http://example.com/get/<generated-uuid>
 `
 
 func main() {
@@ -261,6 +267,46 @@ func main() {
 		ProgressInterval:   *progress,
 		ProgressCSV:        *csv,
 	}
+
+	// If unique-url flag is set, use a RequestFunc to generate unique URLs
+	if *uniqueURL {
+		w.RequestFunc = func() *http.Request {
+			// Generate a new UUID
+			uniqueID := uuid.New().String()
+
+			// Parse the original URL
+			parsedURL, err := gourl.Parse(url)
+			if err != nil {
+				log.Fatalf("Error parsing URL: %v", err)
+			}
+
+			// Append the UUID to the URL path
+			if strings.HasSuffix(parsedURL.Path, "/") {
+				parsedURL.Path = parsedURL.Path + uniqueID
+			} else {
+				parsedURL.Path = parsedURL.Path + "/" + uniqueID
+			}
+
+			// Create a new request with the modified URL
+			newReq, err := http.NewRequest(method, parsedURL.String(), nil)
+			if err != nil {
+				log.Fatalf("Error creating request: %v", err)
+			}
+
+			// Copy headers and auth from the original request
+			newReq.Header = req.Header
+			newReq.ContentLength = int64(len(bodyAll))
+			if username != "" || password != "" {
+				newReq.SetBasicAuth(username, password)
+			}
+			if *hostHeader != "" {
+				newReq.Host = *hostHeader
+			}
+
+			return newReq
+		}
+	}
+
 	w.Init()
 
 	c := make(chan os.Signal, 1)
